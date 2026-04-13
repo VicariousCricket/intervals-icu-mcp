@@ -8,14 +8,19 @@ from fastmcp import Context
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
+from .types import IntParam, OptionalIntParam
 
 
 async def get_power_curves(
-    days_back: Annotated[int | None, "Number of days to analyze (optional)"] = None,
+    days_back: Annotated[OptionalIntParam, "Number of days to analyze (optional)"] = None,
     time_period: Annotated[
         str | None,
         "Time period shorthand: 'week', 'month', 'year', 'all' (optional)",
     ] = None,
+    activity_type: Annotated[
+        str,
+        "Activity type to analyze: 'Ride' (default), 'VirtualRide', 'Run', 'VirtualRun', etc.",
+    ] = "Ride",
     ctx: Context | None = None,
 ) -> str:
     """Get power curve data showing best efforts for various durations.
@@ -30,6 +35,7 @@ async def get_power_curves(
         days_back: Number of days to analyze (overrides time_period)
         time_period: Time period shorthand - 'week' (7 days), 'month' (30 days),
                      'year' (365 days), 'all' (all time). Default is 90 days.
+        activity_type: Activity type to filter by (default 'Ride')
 
     Returns:
         JSON string with power curve data
@@ -71,7 +77,7 @@ async def get_power_curves(
             period_label = "90_days"
 
         async with ICUClient(config) as client:
-            power_curve = await client.get_power_curves(oldest=oldest)
+            power_curve = await client.get_power_curves(oldest=oldest, activity_type=activity_type)
 
             if not power_curve.data or len(power_curve.data) == 0:
                 return ResponseBuilder.build_response(

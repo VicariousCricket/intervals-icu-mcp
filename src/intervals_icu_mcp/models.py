@@ -17,11 +17,12 @@ class SportSettings(BaseModel):
     """Sport-specific settings for an athlete."""
 
     id: int
-    type: str | None = None
+    type: str | None = None  # singular sport type from API (e.g. "Ride")
+    types: list[str] = Field(default_factory=list)  # multi-type variant
     ftp: int | None = None
-    fthr: int | None = None
-    pace_threshold: float | None = None
-    swim_threshold: float | None = None
+    lthr: int | None = None
+    threshold_pace: float | None = None
+    pace_units: str | None = None
 
 
 class Athlete(BaseModel):
@@ -419,7 +420,7 @@ class HistogramBin(BaseModel):
 
     min: float  # Minimum value for this bin
     max: float  # Maximum value for this bin
-    count: int  # Number of data points in this bin
+    count: int | None = None  # Number of data points in this bin
     secs: int | None = None  # Time spent in this bin (seconds)
 
 

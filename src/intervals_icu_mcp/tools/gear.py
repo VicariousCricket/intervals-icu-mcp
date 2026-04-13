@@ -7,6 +7,7 @@ from fastmcp import Context
 from ..auth import load_config, validate_credentials
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
+from .types import IntParam, OptionalIntParam
 
 
 async def get_gear_list(
@@ -310,7 +311,7 @@ async def create_gear_reminder(
     distance_alert: Annotated[
         float | None, "Alert every N kilometers (e.g., 500 for every 500km)"
     ] = None,
-    time_alert: Annotated[int | None, "Alert every N hours (e.g., 100 for every 100 hours)"] = None,
+    time_alert: Annotated[OptionalIntParam, "Alert every N hours (e.g., 100 for every 100 hours)"] = None,
     ctx: Context | None = None,
 ) -> str:
     """Create a maintenance reminder for a gear item.
@@ -380,10 +381,10 @@ async def create_gear_reminder(
 
 async def update_gear_reminder(
     gear_id: Annotated[str, "ID of the gear item"],
-    reminder_id: Annotated[int, "ID of the reminder to update"],
+    reminder_id: Annotated[IntParam, "ID of the reminder to update"],
     text: Annotated[str | None, "Updated reminder text"] = None,
     distance_alert: Annotated[float | None, "Updated distance alert in kilometers"] = None,
-    time_alert: Annotated[int | None, "Updated time alert in hours"] = None,
+    time_alert: Annotated[OptionalIntParam, "Updated time alert in hours"] = None,
     ctx: Context | None = None,
 ) -> str:
     """Update an existing gear maintenance reminder.

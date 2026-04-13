@@ -8,11 +8,12 @@ from fastmcp import Context
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
+from .types import IntParam, OptionalIntParam
 
 
 async def get_calendar_events(
-    days_ahead: Annotated[int, "Number of days to look ahead"] = 7,
-    days_back: Annotated[int, "Number of days to look back"] = 0,
+    days_ahead: Annotated[IntParam, "Number of days to look ahead"] = 7,
+    days_back: Annotated[IntParam, "Number of days to look back"] = 0,
     ctx: Context | None = None,
 ) -> str:
     """Get planned events and workouts from the calendar.
@@ -67,7 +68,7 @@ async def get_calendar_events(
                     events_by_date[date] = []
 
                 # Determine relative timing
-                date_obj = datetime.strptime(date, "%Y-%m-%d").date()
+                date_obj = datetime.strptime(date.split("T")[0], "%Y-%m-%d").date()
                 today = datetime.now().date()
 
                 if date_obj == today:
@@ -145,7 +146,7 @@ async def get_calendar_events(
 
 
 async def get_upcoming_workouts(
-    limit: Annotated[int, "Maximum number of workouts to return"] = 7,
+    limit: Annotated[IntParam, "Maximum number of workouts to return"] = 7,
     ctx: Context | None = None,
 ) -> str:
     """Get upcoming planned workouts from the calendar.
@@ -189,7 +190,7 @@ async def get_upcoming_workouts(
 
             workouts_data: list[dict[str, Any]] = []
             for workout in workouts:
-                date_obj = datetime.strptime(workout.start_date_local, "%Y-%m-%d").date()
+                date_obj = datetime.strptime(workout.start_date_local.split("T")[0], "%Y-%m-%d").date()
                 today = datetime.now().date()
 
                 if date_obj == today:
@@ -251,7 +252,7 @@ async def get_upcoming_workouts(
 
 
 async def get_event(
-    event_id: Annotated[int, "Event ID to retrieve"],
+    event_id: Annotated[IntParam, "Event ID to retrieve"],
     ctx: Context | None = None,
 ) -> str:
     """Get detailed information for a specific calendar event.

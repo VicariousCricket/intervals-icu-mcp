@@ -8,11 +8,12 @@ from fastmcp import Context
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
+from .types import IntParam, OptionalIntParam
 
 
 async def get_recent_activities(
-    limit: Annotated[int, "Number of activities to fetch"] = 30,
-    days_back: Annotated[int, "Number of days to look back"] = 30,
+    limit: Annotated[IntParam, "Number of activities to fetch"] = 30,
+    days_back: Annotated[IntParam, "Number of days to look back"] = 30,
     ctx: Context | None = None,
 ) -> str:
     """Get recent activities for the authenticated athlete.
@@ -117,6 +118,28 @@ async def get_activity_details(
     try:
         async with ICUClient(config) as client:
             activity = await client.get_activity(activity_id=activity_id)
+
+            # Detect Strava-sourced stub: numeric ID with no type and no metrics
+            is_strava_stub = (
+                activity.type is None
+                and activity.average_heartrate is None
+                and activity.moving_time is None
+                and not str(activity_id).startswith("i")
+            )
+            if is_strava_stub:
+                return ResponseBuilder.build_response(
+                    data={
+                        "id": activity.id,
+                        "name": activity.name or "Untitled",
+                        "start_date": activity.start_date_local,
+                        "source": "Strava",
+                    },
+                    metadata={
+                        "warning": "Strava-sourced activities are not readable via the Intervals.icu API. "
+                        "Only basic metadata (id, name, date) is available. "
+                        "Use the Intervals.icu web interface to view full details."
+                    },
+                )
 
             activity_data: dict[str, Any] = {
                 "id": activity.id,
@@ -231,7 +254,7 @@ async def get_activity_details(
 
 async def search_activities(
     query: Annotated[str, "Search query (activity name or tag)"],
-    limit: Annotated[int, "Maximum number of results to return"] = 30,
+    limit: Annotated[IntParam, "Maximum number of results to return"] = 30,
     ctx: Context | None = None,
 ) -> str:
     """Search for activities by name or tag.
@@ -305,8 +328,8 @@ async def update_activity(
     activity_type: Annotated[str | None, "Updated activity type (e.g., Ride, Run, Swim)"] = None,
     trainer: Annotated[bool | None, "Mark as trainer/indoor workout"] = None,
     commute: Annotated[bool | None, "Mark as commute"] = None,
-    feel: Annotated[int | None, "How you felt (1-5 scale)"] = None,
-    perceived_exertion: Annotated[int | None, "RPE rating (1-10 scale)"] = None,
+    feel: Annotated[OptionalIntParam, "How you felt (1-5 scale)"] = None,
+    perceived_exertion: Annotated[OptionalIntParam, "RPE rating (1-10 scale)"] = None,
     ctx: Context | None = None,
 ) -> str:
     """Update an existing activity's metadata.
@@ -642,7 +665,7 @@ async def download_gpx_file(
 
 async def search_activities_full(
     query: Annotated[str, "Search query (activity name or tag)"],
-    limit: Annotated[int, "Maximum number of results to return"] = 30,
+    limit: Annotated[IntParam, "Maximum number of results to return"] = 30,
     ctx: Context | None = None,
 ) -> str:
     """Search for activities by name or tag, returning complete activity details.
@@ -737,7 +760,7 @@ async def search_activities_full(
 
 async def get_activities_around(
     activity_id: Annotated[str, "Reference activity ID"],
-    count: Annotated[int, "Number of activities before and after"] = 5,
+    count: Annotated[IntParam, "Number of activities before and after"] = 5,
     ctx: Context | None = None,
 ) -> str:
     """Get activities before and after a specific activity for context.

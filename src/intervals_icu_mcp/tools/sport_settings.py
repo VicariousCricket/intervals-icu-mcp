@@ -7,6 +7,7 @@ from fastmcp import Context
 from ..auth import load_config, validate_credentials
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
+from .types import IntParam, OptionalIntParam
 
 
 async def get_sport_settings(
@@ -37,7 +38,7 @@ async def get_sport_settings(
             for settings in settings_list:
                 sport_info: dict[str, Any] = {
                     "id": settings.id,
-                    "type": settings.type,
+                    "types": settings.types,
                 }
 
                 # Power settings (cycling)
@@ -45,23 +46,16 @@ async def get_sport_settings(
                     sport_info["ftp_watts"] = settings.ftp
 
                 # Heart rate settings
-                if settings.fthr is not None:
-                    sport_info["fthr_bpm"] = settings.fthr
+                if settings.lthr is not None:
+                    sport_info["lthr_bpm"] = settings.lthr
 
                 # Pace settings (running/swimming)
-                if settings.pace_threshold is not None:
-                    # Convert to min:sec per km
-                    pace_secs = settings.pace_threshold * 60
+                if settings.threshold_pace is not None:
+                    pace_secs = settings.threshold_pace * 60
                     minutes = int(pace_secs // 60)
                     seconds = int(pace_secs % 60)
-                    sport_info["pace_threshold"] = f"{minutes}:{seconds:02d} /km"
-
-                if settings.swim_threshold is not None:
-                    # Convert to min:sec per 100m
-                    swim_secs = settings.swim_threshold * 60
-                    minutes = int(swim_secs // 60)
-                    seconds = int(swim_secs % 60)
-                    sport_info["swim_threshold"] = f"{minutes}:{seconds:02d} /100m"
+                    unit = "/100m" if settings.pace_units == "SECS_100M" else "/km"
+                    sport_info["threshold_pace"] = f"{minutes}:{seconds:02d} {unit}"
 
                 settings_data.append(sport_info)
 
@@ -77,9 +71,9 @@ async def get_sport_settings(
 
 
 async def update_sport_settings(
-    sport_id: Annotated[int, "ID of the sport settings to update"],
-    ftp: Annotated[int | None, "Functional Threshold Power in watts (for cycling)"] = None,
-    fthr: Annotated[int | None, "Functional Threshold Heart Rate in bpm"] = None,
+    sport_id: Annotated[IntParam, "ID of the sport settings to update"],
+    ftp: Annotated[OptionalIntParam, "Functional Threshold Power in watts (for cycling)"] = None,
+    fthr: Annotated[OptionalIntParam, "Functional Threshold Heart Rate in bpm"] = None,
     pace_threshold: Annotated[
         float | None, "Threshold pace in min/km (e.g., 4.5 for 4:30/km)"
     ] = None,
@@ -128,23 +122,19 @@ async def update_sport_settings(
 
             result: dict[str, Any] = {
                 "id": settings.id,
-                "type": settings.type,
+                "types": settings.types,
             }
 
             if settings.ftp is not None:
                 result["ftp_watts"] = settings.ftp
-            if settings.fthr is not None:
-                result["fthr_bpm"] = settings.fthr
-            if settings.pace_threshold is not None:
-                pace_secs = settings.pace_threshold * 60
+            if settings.lthr is not None:
+                result["lthr_bpm"] = settings.lthr
+            if settings.threshold_pace is not None:
+                pace_secs = settings.threshold_pace * 60
                 minutes = int(pace_secs // 60)
                 seconds = int(pace_secs % 60)
-                result["pace_threshold"] = f"{minutes}:{seconds:02d} /km"
-            if settings.swim_threshold is not None:
-                swim_secs = settings.swim_threshold * 60
-                minutes = int(swim_secs // 60)
-                seconds = int(swim_secs % 60)
-                result["swim_threshold"] = f"{minutes}:{seconds:02d} /100m"
+                unit = "/100m" if settings.pace_units == "SECS_100M" else "/km"
+                result["threshold_pace"] = f"{minutes}:{seconds:02d} {unit}"
 
             return ResponseBuilder.build_response(
                 result,
@@ -161,7 +151,7 @@ async def update_sport_settings(
 
 
 async def apply_sport_settings(
-    sport_id: Annotated[int, "ID of the sport settings to apply"],
+    sport_id: Annotated[IntParam, "ID of the sport settings to apply"],
     oldest_date: Annotated[
         str | None, "Oldest date to apply settings to (YYYY-MM-DD format)"
     ] = None,
@@ -205,8 +195,8 @@ async def apply_sport_settings(
 
 async def create_sport_settings(
     sport_type: Annotated[str, "Type of sport (e.g., 'Ride', 'Run', 'Swim')"],
-    ftp: Annotated[int | None, "Functional Threshold Power in watts (for cycling)"] = None,
-    fthr: Annotated[int | None, "Functional Threshold Heart Rate in bpm"] = None,
+    ftp: Annotated[OptionalIntParam, "Functional Threshold Power in watts (for cycling)"] = None,
+    fthr: Annotated[OptionalIntParam, "Functional Threshold Heart Rate in bpm"] = None,
     pace_threshold: Annotated[
         float | None, "Threshold pace in min/km (e.g., 4.5 for 4:30/km)"
     ] = None,
@@ -250,23 +240,19 @@ async def create_sport_settings(
 
             result: dict[str, Any] = {
                 "id": settings.id,
-                "type": settings.type,
+                "types": settings.types,
             }
 
             if settings.ftp is not None:
                 result["ftp_watts"] = settings.ftp
-            if settings.fthr is not None:
-                result["fthr_bpm"] = settings.fthr
-            if settings.pace_threshold is not None:
-                pace_secs = settings.pace_threshold * 60
+            if settings.lthr is not None:
+                result["lthr_bpm"] = settings.lthr
+            if settings.threshold_pace is not None:
+                pace_secs = settings.threshold_pace * 60
                 minutes = int(pace_secs // 60)
                 seconds = int(pace_secs % 60)
-                result["pace_threshold"] = f"{minutes}:{seconds:02d} /km"
-            if settings.swim_threshold is not None:
-                swim_secs = settings.swim_threshold * 60
-                minutes = int(swim_secs // 60)
-                seconds = int(swim_secs % 60)
-                result["swim_threshold"] = f"{minutes}:{seconds:02d} /100m"
+                unit = "/100m" if settings.pace_units == "SECS_100M" else "/km"
+                result["threshold_pace"] = f"{minutes}:{seconds:02d} {unit}"
 
             return ResponseBuilder.build_response(
                 result,
@@ -283,7 +269,7 @@ async def create_sport_settings(
 
 
 async def delete_sport_settings(
-    sport_id: Annotated[int, "ID of the sport settings to delete"],
+    sport_id: Annotated[IntParam, "ID of the sport settings to delete"],
     ctx: Context | None = None,
 ) -> str:
     """Delete sport-specific settings.

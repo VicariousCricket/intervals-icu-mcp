@@ -260,7 +260,7 @@ class ICUClient:
             List of Activity objects around the reference activity
         """
         athlete_id = athlete_id or self.config.intervals_icu_athlete_id
-        params = {"id": activity_id, "count": count}
+        params = {"activity_id": activity_id, "count": count}
 
         response = await self._request(
             "GET", f"/athlete/{athlete_id}/activities-around", params=params
@@ -358,7 +358,7 @@ class ICUClient:
             Histogram with power distribution bins
         """
         response = await self._request("GET", f"/activity/{activity_id}/power-histogram")
-        return Histogram(**response.json())
+        return Histogram(bins=response.json())
 
     async def get_hr_histogram(
         self,
@@ -373,7 +373,7 @@ class ICUClient:
             Histogram with HR distribution bins
         """
         response = await self._request("GET", f"/activity/{activity_id}/hr-histogram")
-        return Histogram(**response.json())
+        return Histogram(bins=response.json())
 
     async def get_pace_histogram(
         self,
@@ -388,7 +388,7 @@ class ICUClient:
             Histogram with pace distribution bins
         """
         response = await self._request("GET", f"/activity/{activity_id}/pace-histogram")
-        return Histogram(**response.json())
+        return Histogram(bins=response.json())
 
     async def get_gap_histogram(
         self,
@@ -403,7 +403,7 @@ class ICUClient:
             Histogram with GAP distribution bins
         """
         response = await self._request("GET", f"/activity/{activity_id}/gap-histogram")
-        return Histogram(**response.json())
+        return Histogram(bins=response.json())
 
     # ==================== Wellness Endpoints ====================
 
@@ -569,6 +569,7 @@ class ICUClient:
         athlete_id: str | None = None,
         oldest: str | None = None,
         newest: str | None = None,
+        activity_type: str = "Ride",
     ) -> PowerCurve:
         """Get power curve data (best efforts for various durations).
 
@@ -576,12 +577,13 @@ class ICUClient:
             athlete_id: Athlete ID (uses config default if not provided)
             oldest: Oldest date to include (ISO-8601 format)
             newest: Newest date to include (ISO-8601 format)
+            activity_type: Activity type to filter by (e.g., "Ride", "VirtualRide")
 
         Returns:
             PowerCurve with best efforts data
         """
         athlete_id = athlete_id or self.config.intervals_icu_athlete_id
-        params = {}
+        params: dict[str, Any] = {"type": activity_type}
 
         if oldest:
             params["oldest"] = oldest
@@ -683,8 +685,10 @@ class ICUClient:
             List of Interval objects
         """
         response = await self._request("GET", f"/activity/{activity_id}/intervals")
+        data = response.json()
+        intervals_list = data.get("icu_intervals") or data.get("intervals") or (data if isinstance(data, list) else [])
         adapter = TypeAdapter(list[Interval])
-        return adapter.validate_python(response.json())
+        return adapter.validate_python(intervals_list)
 
     async def get_activity_streams(
         self,
@@ -706,23 +710,37 @@ class ICUClient:
             params["types"] = ",".join(streams)
 
         response = await self._request("GET", f"/activity/{activity_id}/streams", params=params)
-        return ActivityStreams(**response.json())
+        raw = response.json()
+        streams_dict = {s["type"]: s["data"] for s in raw if "type" in s and "data" in s}
+        return ActivityStreams(**streams_dict)
 
     async def get_best_efforts(
         self,
         activity_id: str,
+        stream: str = "watts",
+        duration: int | None = None,
     ) -> list[BestEffort]:
         """Get best efforts for an activity.
 
         Args:
             activity_id: Activity ID
+            stream: Stream type to compute best efforts from ('watts', 'heartrate', 'velocity_smooth')
+            duration: Optional duration in seconds (if not specified, returns standard best efforts)
 
         Returns:
             List of BestEffort objects
         """
-        response = await self._request("GET", f"/activity/{activity_id}/best-efforts")
+        params: dict[str, Any] = {"stream": stream}
+        # API requires either duration or distance; default to 5 minutes (300 secs)
+        params["duration"] = duration or 300
+
+        response = await self._request(
+            "GET", f"/activity/{activity_id}/best-efforts", params=params
+        )
+        data = response.json()
+        efforts = data["efforts"] if isinstance(data, dict) and "efforts" in data else data
         adapter = TypeAdapter(list[BestEffort])
-        return adapter.validate_python(response.json())
+        return adapter.validate_python(efforts)
 
     async def search_intervals(
         self,
@@ -745,14 +763,15 @@ class ICUClient:
             List of matching intervals with activity context
         """
         athlete_id = athlete_id or self.config.intervals_icu_athlete_id
-        params = {}
+        params: dict[str, Any] = {
+            "minIntensity": 0,
+            "maxIntensity": 100,
+            "minSecs": min_duration or 0,
+            "maxSecs": max_duration or 86400,
+        }
 
         if interval_type:
             params["type"] = interval_type
-        if min_duration:
-            params["minDuration"] = min_duration
-        if max_duration:
-            params["maxDuration"] = max_duration
 
         response = await self._request(
             "GET", f"/athlete/{athlete_id}/activities/interval-search", params=params
@@ -777,7 +796,7 @@ class ICUClient:
             List of Workout objects
         """
         athlete_id = athlete_id or self.config.intervals_icu_athlete_id
-        response = await self._request("GET", f"/athlete/{athlete_id}/folders/{folder_id}/workouts")
+        response = await self._request("GET", f"/athlete/{athlete_id}/workouts", params={"folder_id": folder_id})
         adapter = TypeAdapter(list[Workout])
         return adapter.validate_python(response.json())
 

@@ -7,6 +7,7 @@ from fastmcp import Context
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
+from .types import IntParam, OptionalIntParam
 
 
 async def get_activity_streams(
@@ -217,6 +218,14 @@ async def get_activity_intervals(
 
 async def get_best_efforts(
     activity_id: Annotated[str, "Activity ID to analyze"],
+    stream: Annotated[
+        str,
+        "Stream to compute best efforts from: 'watts' (power, default), 'heartrate', or 'velocity_smooth' (pace)",
+    ] = "watts",
+    duration: Annotated[
+        int | None,
+        "Duration in seconds to compute best efforts for (optional, default 300 seconds)",
+    ] = None,
     ctx: Context | None = None,
 ) -> str:
     """Get best efforts/peak performances from an activity.
@@ -227,6 +236,8 @@ async def get_best_efforts(
 
     Args:
         activity_id: The unique ID of the activity
+        stream: Stream type to analyze ('watts', 'heartrate', or 'velocity_smooth')
+        duration: Duration in seconds to compute best efforts for (optional, defaults to 300)
 
     Returns:
         JSON string with best efforts data
@@ -236,7 +247,7 @@ async def get_best_efforts(
 
     try:
         async with ICUClient(config) as client:
-            best_efforts = await client.get_best_efforts(activity_id)
+            best_efforts = await client.get_best_efforts(activity_id, stream=stream, duration=duration)
 
             if not best_efforts:
                 return ResponseBuilder.build_response(
@@ -300,10 +311,10 @@ async def get_best_efforts(
 
 
 async def search_intervals(
-    interval_type: Annotated[str | None, "Type of interval to search for"] = None,
-    min_duration: Annotated[int | None, "Minimum duration in seconds"] = None,
-    max_duration: Annotated[int | None, "Maximum duration in seconds"] = None,
-    limit: Annotated[int, "Maximum number of results to return"] = 30,
+    interval_type: Annotated[str, "Type of interval to search for (leave empty for all types)"] = "",
+    min_duration: Annotated[IntParam, "Minimum duration in seconds (0 = no minimum)"] = 0,
+    max_duration: Annotated[IntParam, "Maximum duration in seconds (0 = no maximum)"] = 0,
+    limit: Annotated[IntParam, "Maximum number of results to return"] = 30,
     ctx: Context | None = None,
 ) -> str:
     """Search for similar intervals across all activities.
@@ -327,9 +338,9 @@ async def search_intervals(
     try:
         async with ICUClient(config) as client:
             results = await client.search_intervals(
-                interval_type=interval_type,
-                min_duration=min_duration,
-                max_duration=max_duration,
+                interval_type=interval_type or None,
+                min_duration=min_duration or None,
+                max_duration=max_duration or None,
                 limit=limit,
             )
 

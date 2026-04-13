@@ -7,6 +7,7 @@ from fastmcp import Context
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
+from .types import IntParam, OptionalIntParam
 
 
 async def get_workout_library(
@@ -92,7 +93,7 @@ async def get_workout_library(
 
 
 async def get_workouts_in_folder(
-    folder_id: Annotated[int, "Folder ID to get workouts from"],
+    folder_id: Annotated[IntParam, "Folder ID to get workouts from"],
     ctx: Context | None = None,
 ) -> str:
     """Get all workouts in a specific folder or training plan.

@@ -8,10 +8,11 @@ from fastmcp import Context
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
+from .types import IntParam, OptionalIntParam
 
 
 async def get_hr_curves(
-    days_back: Annotated[int | None, "Number of days to analyze (optional)"] = None,
+    days_back: Annotated[OptionalIntParam, "Number of days to analyze (optional)"] = None,
     time_period: Annotated[
         str | None,
         "Time period shorthand: 'week', 'month', 'year', 'all' (optional)",
@@ -182,7 +183,7 @@ async def get_hr_curves(
 
 
 async def get_pace_curves(
-    days_back: Annotated[int | None, "Number of days to analyze (optional)"] = None,
+    days_back: Annotated[OptionalIntParam, "Number of days to analyze (optional)"] = None,
     time_period: Annotated[
         str | None,
         "Time period shorthand: 'week', 'month', 'year', 'all' (optional)",

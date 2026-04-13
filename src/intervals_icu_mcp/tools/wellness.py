@@ -8,10 +8,11 @@ from fastmcp import Context
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
+from .types import IntParam, OptionalIntParam
 
 
 async def get_wellness_data(
-    days_back: Annotated[int, "Number of days to look back"] = 7,
+    days_back: Annotated[IntParam, "Number of days to look back"] = 7,
     ctx: Context | None = None,
 ) -> str:
     """Get wellness data for recent days.
@@ -340,15 +341,15 @@ async def get_wellness_for_date(
 async def update_wellness(
     date: Annotated[str, "Date in YYYY-MM-DD format"],
     weight: Annotated[float | None, "Weight in kg"] = None,
-    resting_hr: Annotated[int | None, "Resting heart rate in bpm"] = None,
+    resting_hr: Annotated[OptionalIntParam, "Resting heart rate in bpm"] = None,
     hrv: Annotated[float | None, "HRV (rMSSD) value"] = None,
-    sleep_secs: Annotated[int | None, "Sleep duration in seconds"] = None,
-    sleep_quality: Annotated[int | None, "Sleep quality (1-5 scale)"] = None,
-    fatigue: Annotated[int | None, "Fatigue level (1-5 scale)"] = None,
-    soreness: Annotated[int | None, "Soreness level (1-5 scale)"] = None,
-    stress: Annotated[int | None, "Stress level (1-5 scale)"] = None,
-    mood: Annotated[int | None, "Mood level (1-5 scale)"] = None,
-    motivation: Annotated[int | None, "Motivation level (1-5 scale)"] = None,
+    sleep_secs: Annotated[OptionalIntParam, "Sleep duration in seconds"] = None,
+    sleep_quality: Annotated[OptionalIntParam, "Sleep quality (1-5 scale)"] = None,
+    fatigue: Annotated[OptionalIntParam, "Fatigue level (1-5 scale)"] = None,
+    soreness: Annotated[OptionalIntParam, "Soreness level (1-5 scale)"] = None,
+    stress: Annotated[OptionalIntParam, "Stress level (1-5 scale)"] = None,
+    mood: Annotated[OptionalIntParam, "Mood level (1-5 scale)"] = None,
+    motivation: Annotated[OptionalIntParam, "Motivation level (1-5 scale)"] = None,
     readiness: Annotated[float | None, "Readiness score (0-100)"] = None,
     comments: Annotated[str | None, "Comments or notes"] = None,
     ctx: Context | None = None,

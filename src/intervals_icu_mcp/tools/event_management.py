@@ -1,6 +1,7 @@
 """Event/calendar management tools for Intervals.icu MCP server."""
 
-from datetime import datetime
+import logging
+import re
 from typing import Annotated, Any
 
 from fastmcp import Context
@@ -8,23 +9,74 @@ from fastmcp import Context
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
+from ..workout_translator import translate_workout
+from .types import IntParam, OptionalIntParam
+
+logger = logging.getLogger(__name__)
+
+
+def _get_sport_type(event_type: str | None) -> str:
+    """Map an Intervals.icu event type string to a translator sport_type.
+
+    Args:
+        event_type: Activity type string from the event (e.g. "Run", "Ride", "Swim").
+
+    Returns:
+        One of "Run", "Ride", or "Swim".
+    """
+    if not event_type:
+        return "Run"
+    t = event_type.lower()
+    if any(word in t for word in ("ride", "cycle", "bike", "cycling", "virtual")):
+        return "Ride"
+    if "swim" in t:
+        return "Swim"
+    return "Run"
+
+
+def normalize_date(date_str: str) -> str:
+    """Normalize date string to Intervals.icu API format (YYYY-MM-DDTHH:MM:SS)."""
+    if not date_str:
+        return date_str
+    if "T" in date_str:
+        if len(date_str) >= 19:
+            return date_str
+        # Partial time like YYYY-MM-DDTHH:MM
+        parts = date_str.split("T")
+        if len(parts[1]) == 5:
+            return f"{date_str}:00"
+        return date_str
+    if len(date_str) == 10:
+        return f"{date_str}T00:00:00"
+    return date_str
+
+
+def validate_date(date_str: str) -> bool:
+    """Return True if date_str matches YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS (optionally HH:MM)."""
+    return bool(re.match(r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?)?$", date_str))
 
 
 async def create_event(
-    start_date: Annotated[str, "Start date in YYYY-MM-DD format"],
+    start_date: Annotated[str, "Start date. Format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS (defaults to 00:00:00 if time omitted)"],
     name: Annotated[str, "Event name"],
     category: Annotated[str, "Event category: WORKOUT, NOTE, RACE, or GOAL"],
-    description: Annotated[str | None, "Event description (optional)"] = None,
+    description: Annotated[str | None, "Event description (optional). If auto_translate is True and this is a WORKOUT, the description will be translated from natural-language FinalSurge format to Intervals.icu structured format automatically."] = None,
     event_type: Annotated[str | None, "Activity type (e.g., Ride, Run, Swim)"] = None,
-    duration_seconds: Annotated[int | None, "Planned duration in seconds"] = None,
+    duration_seconds: Annotated[OptionalIntParam, "Planned duration in seconds"] = None,
     distance_meters: Annotated[float | None, "Planned distance in meters"] = None,
-    training_load: Annotated[int | None, "Planned training load"] = None,
+    training_load: Annotated[OptionalIntParam, "Planned training load"] = None,
+    auto_translate: Annotated[bool, "When True (default), automatically translate natural-language workout descriptions (e.g. FinalSurge format) into Intervals.icu structured format. Only applies to WORKOUT events that have both a description and a duration. Set to False to store the description verbatim."] = True,
     ctx: Context | None = None,
 ) -> str:
     """Create a new calendar event (planned workout, note, race, or goal).
 
     Adds an event to your Intervals.icu calendar. Events can be workouts with
     planned metrics, notes for tracking information, races, or training goals.
+
+    When creating a WORKOUT with a natural-language description (e.g. from FinalSurge),
+    set auto_translate=True (the default) to automatically convert the description into
+    Intervals.icu's structured workout format. The response includes translation metadata
+    so you can see whether the description was changed.
 
     Args:
         start_date: Date in ISO-8601 format (YYYY-MM-DD)
@@ -35,6 +87,7 @@ async def create_event(
         duration_seconds: Planned duration for workouts
         distance_meters: Planned distance for workouts
         training_load: Planned training load for workouts
+        auto_translate: Translate natural-language descriptions to ICU format (default True)
 
     Returns:
         JSON string with created event data
@@ -51,13 +104,33 @@ async def create_event(
         )
 
     # Validate date format
-    try:
-        datetime.strptime(start_date, "%Y-%m-%d")
-    except ValueError:
+    if not validate_date(start_date):
         return ResponseBuilder.build_error_response(
-            "Invalid date format. Please use YYYY-MM-DD format.",
+            "Invalid date format. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS.",
             error_type="validation_error",
         )
+
+    start_date = normalize_date(start_date)
+
+    # Auto-translate description for WORKOUT events when conditions are met
+    translation_meta: dict[str, Any] = {}
+    if (
+        auto_translate
+        and description
+        and duration_seconds
+        and category.upper() == "WORKOUT"
+    ):
+        sport_type = _get_sport_type(event_type)
+        translated = translate_workout(description, int(duration_seconds), sport_type)
+        if translated != description:
+            translation_meta = {
+                "description_translated": True,
+                "original_description": description,
+            }
+            description = translated
+            logger.info("Auto-translated workout description for event '%s'", name)
+        else:
+            translation_meta = {"description_translated": False}
 
     try:
         # Build event data
@@ -102,7 +175,10 @@ async def create_event(
             return ResponseBuilder.build_response(
                 data=event_result,
                 query_type="create_event",
-                metadata={"message": f"Successfully created {category.lower()}: {name}"},
+                metadata={
+                    "message": f"Successfully created {category.lower()}: {name}",
+                    **translation_meta,
+                },
             )
 
     except ICUAPIError as e:
@@ -114,14 +190,14 @@ async def create_event(
 
 
 async def update_event(
-    event_id: Annotated[int, "Event ID to update"],
+    event_id: Annotated[IntParam, "Event ID to update"],
     name: Annotated[str | None, "Updated event name"] = None,
     description: Annotated[str | None, "Updated description"] = None,
     start_date: Annotated[str | None, "Updated start date (YYYY-MM-DD)"] = None,
     event_type: Annotated[str | None, "Updated activity type"] = None,
-    duration_seconds: Annotated[int | None, "Updated duration in seconds"] = None,
+    duration_seconds: Annotated[OptionalIntParam, "Updated duration in seconds"] = None,
     distance_meters: Annotated[float | None, "Updated distance in meters"] = None,
-    training_load: Annotated[int | None, "Updated training load"] = None,
+    training_load: Annotated[OptionalIntParam, "Updated training load"] = None,
     ctx: Context | None = None,
 ) -> str:
     """Update an existing calendar event.
@@ -147,13 +223,12 @@ async def update_event(
 
     # Validate date format if provided
     if start_date:
-        try:
-            datetime.strptime(start_date, "%Y-%m-%d")
-        except ValueError:
+        if not validate_date(start_date):
             return ResponseBuilder.build_error_response(
-                "Invalid date format. Please use YYYY-MM-DD format.",
+                "Invalid date format. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS.",
                 error_type="validation_error",
             )
+        start_date = normalize_date(start_date)
 
     try:
         # Build update data (only include provided fields)
@@ -216,7 +291,7 @@ async def update_event(
 
 
 async def delete_event(
-    event_id: Annotated[int, "Event ID to delete"],
+    event_id: Annotated[IntParam, "Event ID to delete"],
     ctx: Context | None = None,
 ) -> str:
     """Delete a calendar event.
@@ -261,6 +336,10 @@ async def bulk_create_events(
         str,
         "JSON string containing array of events. Each event should have: start_date_local, name, category, and optional fields like description, type, moving_time, distance, icu_training_load",
     ],
+    auto_translate: Annotated[
+        bool,
+        "When True (default), automatically translate natural-language workout descriptions into Intervals.icu structured format for each WORKOUT event that has both a description and a moving_time. Set to False to store descriptions verbatim.",
+    ] = True,
     ctx: Context | None = None,
 ) -> str:
     """Create multiple calendar events in a single operation.
@@ -268,8 +347,14 @@ async def bulk_create_events(
     This is more efficient than creating events one at a time. Provide a JSON array
     of event objects, each with the same structure as create_event.
 
+    When auto_translate is True (the default), each WORKOUT event whose description
+    looks like a natural-language format (e.g. FinalSurge) will have its description
+    automatically converted to Intervals.icu structured format before creation.
+    The response includes a translated_count so you can see how many were changed.
+
     Args:
         events: JSON array of event objects to create
+        auto_translate: Translate natural-language descriptions to ICU format (default True)
 
     Returns:
         JSON string with created events
@@ -322,14 +407,33 @@ async def bulk_create_events(
             # Normalize category to uppercase
             event_data["category"] = event_data["category"].upper()
 
-            # Validate date format
-            try:
-                datetime.strptime(event_data["start_date_local"], "%Y-%m-%d")
-            except ValueError:
+            # Validate and normalize date format
+            if not validate_date(event_data["start_date_local"]):
                 return ResponseBuilder.build_error_response(
-                    f"Event {i}: Invalid date format. Please use YYYY-MM-DD format.",
+                    f"Event {i}: Invalid date format. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS.",
                     error_type="validation_error",
                 )
+            event_data["start_date_local"] = normalize_date(event_data["start_date_local"])
+
+        # Auto-translate descriptions for eligible WORKOUT events
+        translated_count = 0
+        if auto_translate:
+            for event_data in events_data:
+                if event_data.get("category") != "WORKOUT":
+                    continue
+                desc = event_data.get("description")
+                duration = event_data.get("moving_time")
+                if not desc or not duration:
+                    continue
+                sport_type = _get_sport_type(event_data.get("type"))
+                translated = translate_workout(desc, int(duration), sport_type)
+                if translated != desc:
+                    event_data["description"] = translated
+                    translated_count += 1
+                    logger.info(
+                        "Auto-translated workout description for event '%s'",
+                        event_data.get("name", "<unnamed>"),
+                    )
 
         async with ICUClient(config) as client:
             created_events = await client.bulk_create_events(events_data)
@@ -362,6 +466,7 @@ async def bulk_create_events(
                 metadata={
                     "message": f"Successfully created {len(created_events)} events",
                     "count": len(created_events),
+                    "translated_count": translated_count,
                 },
             )
 
@@ -433,7 +538,7 @@ async def bulk_delete_events(
 
 
 async def duplicate_event(
-    event_id: Annotated[int, "Event ID to duplicate"],
+    event_id: Annotated[IntParam, "Event ID to duplicate"],
     new_date: Annotated[str, "New date for the duplicated event (YYYY-MM-DD format)"],
     ctx: Context | None = None,
 ) -> str:
@@ -453,13 +558,12 @@ async def duplicate_event(
     config: ICUConfig = ctx.get_state("config")
 
     # Validate date format
-    try:
-        datetime.strptime(new_date, "%Y-%m-%d")
-    except ValueError:
+    if not validate_date(new_date):
         return ResponseBuilder.build_error_response(
-            "Invalid date format. Please use YYYY-MM-DD format.",
+            "Invalid date format. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS.",
             error_type="validation_error",
         )
+    new_date = normalize_date(new_date)
 
     try:
         async with ICUClient(config) as client:

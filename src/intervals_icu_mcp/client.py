@@ -1,5 +1,6 @@
 """Async HTTP client for Intervals.icu API."""
 
+from datetime import date
 from typing import Any
 
 import httpx
@@ -587,12 +588,13 @@ class ICUClient:
             PowerCurve with best efforts data
         """
         athlete_id = athlete_id or self.config.intervals_icu_athlete_id
-        params: dict[str, Any] = {"type": activity_type}
+        params: dict[str, Any] = {
+            "type": activity_type,
+            "newest": newest or date.today().isoformat(),
+        }
 
         if oldest:
             params["oldest"] = oldest
-        if newest:
-            params["newest"] = newest
 
         response = await self._request(
             "GET", f"/athlete/{athlete_id}/activity-power-curves", params=params
@@ -647,12 +649,10 @@ class ICUClient:
             HRCurve with best efforts data
         """
         athlete_id = athlete_id or self.config.intervals_icu_athlete_id
-        params: dict[str, Any] = {}
+        params: dict[str, Any] = {"newest": newest or date.today().isoformat()}
 
         if oldest:
             params["oldest"] = oldest
-        if newest:
-            params["newest"] = newest
 
         response = await self._request(
             "GET", f"/athlete/{athlete_id}/activity-hr-curves", params=params
@@ -708,12 +708,10 @@ class ICUClient:
             PaceCurve with best efforts data
         """
         athlete_id = athlete_id or self.config.intervals_icu_athlete_id
-        params: dict[str, Any] = {}
+        params: dict[str, Any] = {"newest": newest or date.today().isoformat()}
 
         if oldest:
             params["oldest"] = oldest
-        if newest:
-            params["newest"] = newest
         if use_gap:
             params["gap"] = "true"
 

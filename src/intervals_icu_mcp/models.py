@@ -318,23 +318,25 @@ class FitnessSummary(BaseModel):
 
 
 class Interval(BaseModel):
-    """Activity interval data."""
+    """Activity interval data (maps to API Interval schema)."""
 
     id: int | None = None
     type: str | None = None  # e.g., "WORK", "REST", "WARM_UP", "COOL_DOWN"
-    start: int | None = None  # Start time in seconds
-    end: int | None = None  # End time in seconds
-    duration: int | None = None  # Duration in seconds
+    start_index: int | None = None  # Sample index in the data stream
+    end_index: int | None = None
+    start_time: int | None = None  # Seconds from activity start
+    end_time: int | None = None
+    moving_time: int | None = None  # Duration in seconds (moving)
+    elapsed_time: int | None = None  # Duration in seconds (total)
     distance: float | None = None
     average_watts: int | None = None
-    normalized_power: int | None = None
+    weighted_average_watts: int | None = None  # Normalized power
     average_heartrate: int | None = None
     max_heartrate: int | None = None
     average_cadence: float | None = None
     average_speed: float | None = None
-    target: str | None = None  # Target description
-    target_min: float | None = None
-    target_max: float | None = None
+    training_load: float | None = None
+    label: str | None = None
 
 
 # ==================== Activity Streams Models ====================
@@ -373,34 +375,36 @@ class BestEffort(BaseModel):
 
 
 class GearReminder(BaseModel):
-    """Gear maintenance reminder."""
+    """Gear maintenance reminder (maps to API GearReminder schema)."""
 
     id: int
-    text: str | None = None
-    distance_alert: float | None = Field(None, alias="distance_alert")
-    time_alert: int | None = Field(None, alias="time_alert")
-    due_distance: float | None = Field(None, alias="due_distance")
-    due_time: int | None = Field(None, alias="due_time")
-    is_due: bool | None = Field(None, alias="is_due")
-    snoozed_until: str | None = Field(None, alias="snoozed_until")
-
-    model_config = ConfigDict(populate_by_name=True)
+    gear_id: str | None = None
+    name: str | None = None  # Reminder name/description
+    distance: float | None = None  # Distance threshold in meters
+    time: float | None = None  # Time threshold in seconds
+    activities: int | None = None  # Activity count threshold
+    days: int | None = None  # Days threshold
+    last_reset: str | None = None
+    snoozed_until: str | None = None
+    percent_used: float | None = None  # How much of threshold has been used (0-100+)
+    distance_used: float | None = None  # Distance used since last reset (meters)
+    time_used: float | None = None  # Time used since last reset (seconds)
+    activities_used: int | None = None
+    days_used: int | None = None
 
 
 class Gear(BaseModel):
-    """Gear/equipment item."""
+    """Gear/equipment item (maps to API Gear schema)."""
 
     id: str
-    athlete_id: str | None = Field(None, alias="athlete_id")
+    athlete_id: str | None = None
     name: str | None = None
-    brand: str | None = None
-    model: str | None = None
-    gear_type: str | None = Field(None, alias="gear_type")  # e.g., "BIKE", "SHOE"
-    active: bool | None = None
-    primary: bool | None = None
+    gear_type: str | None = Field(None, alias="type")  # API field is "type"
     distance: float | None = None  # Total distance in meters
-    moving_time: int | None = Field(None, alias="moving_time")  # Total time in seconds
-    activity_count: int | None = Field(None, alias="activity_count")
+    time: float | None = None  # Total time in seconds
+    activities: int | None = None  # Total activity count
+    retired: str | None = None  # Retirement date if retired, else None
+    notes: str | None = None
     reminders: list[GearReminder] = Field(default_factory=list[GearReminder])
 
     model_config = ConfigDict(populate_by_name=True)

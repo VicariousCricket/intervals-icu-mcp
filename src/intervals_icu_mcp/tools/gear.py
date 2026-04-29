@@ -40,25 +40,22 @@ async def get_gear_list(
                     "id": gear.id,
                     "name": gear.name,
                     "type": gear.gear_type,
-                    "active": gear.active,
+                    "active": gear.retired is None,
                 }
 
-                # Brand and model
-                if gear.brand:
-                    gear_info["brand"] = gear.brand
-                if gear.model:
-                    gear_info["model"] = gear.model
+                if gear.notes:
+                    gear_info["notes"] = gear.notes
 
                 # Usage statistics
                 usage: dict[str, Any] = {}
                 if gear.distance is not None:
                     usage["total_distance_km"] = round(gear.distance / 1000, 2)
-                if gear.moving_time is not None:
-                    hours = gear.moving_time // 3600
-                    minutes = (gear.moving_time % 3600) // 60
+                if gear.time is not None:
+                    hours = int(gear.time) // 3600
+                    minutes = (int(gear.time) % 3600) // 60
                     usage["total_time"] = f"{hours}h {minutes}m"
-                if gear.activity_count is not None:
-                    usage["activity_count"] = gear.activity_count
+                if gear.activities is not None:
+                    usage["activity_count"] = gear.activities
 
                 if usage:
                     gear_info["usage"] = usage
@@ -69,27 +66,27 @@ async def get_gear_list(
                     for reminder in gear.reminders:
                         reminder_info: dict[str, Any] = {
                             "id": reminder.id,
-                            "text": reminder.text,
+                            "name": reminder.name,
                         }
 
                         # Alert thresholds
-                        if reminder.distance_alert is not None:
-                            reminder_info["alert_every_km"] = round(
-                                reminder.distance_alert / 1000, 2
+                        if reminder.distance is not None:
+                            reminder_info["alert_every_km"] = round(reminder.distance / 1000, 2)
+                        if reminder.time is not None:
+                            reminder_info["alert_every_hours"] = int(reminder.time) // 3600
+
+                        # Usage progress
+                        if reminder.percent_used is not None:
+                            reminder_info["percent_used"] = round(reminder.percent_used, 1)
+                            reminder_info["is_due"] = reminder.percent_used >= 100
+                        if reminder.distance_used is not None:
+                            reminder_info["distance_used_km"] = round(
+                                reminder.distance_used / 1000, 2
                             )
-                        if reminder.time_alert is not None:
-                            hours = reminder.time_alert // 3600
-                            reminder_info["alert_every_hours"] = hours
-
-                        # Due status
-                        if reminder.is_due is not None:
-                            reminder_info["is_due"] = reminder.is_due
-
-                        if reminder.due_distance is not None:
-                            reminder_info["due_in_km"] = round(reminder.due_distance / 1000, 2)
-                        if reminder.due_time is not None:
-                            hours = reminder.due_time // 3600
-                            reminder_info["due_in_hours"] = hours
+                        if reminder.time_used is not None:
+                            reminder_info["time_used_hours"] = round(
+                                reminder.time_used / 3600, 1
+                            )
 
                         if reminder.snoozed_until:
                             reminder_info["snoozed_until"] = reminder.snoozed_until
@@ -113,10 +110,6 @@ async def get_gear_list(
 async def create_gear(
     name: Annotated[str, "Name of the gear item"],
     gear_type: Annotated[str, "Type of gear (e.g., 'BIKE', 'SHOE', 'TRAINER', 'WETSUIT', 'OTHER')"],
-    brand: Annotated[str | None, "Brand name"] = None,
-    model: Annotated[str | None, "Model name"] = None,
-    active: Annotated[bool, "Whether this gear is actively used"] = True,
-    primary: Annotated[bool, "Whether this is the primary gear of this type"] = False,
     ctx: Context | None = None,
 ) -> str:
     """Create a new gear item for tracking equipment usage and maintenance.
@@ -124,10 +117,6 @@ async def create_gear(
     Args:
         name: Name of the gear item (e.g., "Road Bike", "Running Shoes")
         gear_type: Type of gear - BIKE, SHOE, TRAINER, WETSUIT, or OTHER
-        brand: Brand name (optional)
-        model: Model name (optional)
-        active: Whether this gear is actively used (default: True)
-        primary: Whether this is the primary gear of this type (default: False)
 
     Returns:
         Created gear item with ID and initial stats
@@ -142,15 +131,8 @@ async def create_gear(
         async with ICUClient(config) as client:
             gear_data: dict[str, Any] = {
                 "name": name,
-                "gear_type": gear_type,
-                "active": active,
-                "primary": primary,
+                "type": gear_type,
             }
-
-            if brand:
-                gear_data["brand"] = brand
-            if model:
-                gear_data["model"] = model
 
             gear = await client.create_gear(gear_data)
 
@@ -158,14 +140,8 @@ async def create_gear(
                 "id": gear.id,
                 "name": gear.name,
                 "type": gear.gear_type,
-                "active": gear.active,
-                "primary": gear.primary,
+                "active": gear.retired is None,
             }
-
-            if gear.brand:
-                result["brand"] = gear.brand
-            if gear.model:
-                result["model"] = gear.model
 
             return ResponseBuilder.build_response(
                 result,
@@ -182,10 +158,6 @@ async def update_gear(
     gear_id: Annotated[str, "ID of the gear item to update"],
     name: Annotated[str | None, "Updated name"] = None,
     gear_type: Annotated[str | None, "Updated type (BIKE, SHOE, TRAINER, etc.)"] = None,
-    brand: Annotated[str | None, "Updated brand"] = None,
-    model: Annotated[str | None, "Updated model"] = None,
-    active: Annotated[bool | None, "Whether this gear is actively used"] = None,
-    primary: Annotated[bool | None, "Whether this is the primary gear of this type"] = None,
     ctx: Context | None = None,
 ) -> str:
     """Update an existing gear item.
@@ -194,10 +166,6 @@ async def update_gear(
         gear_id: ID of the gear item to update
         name: Updated name (optional)
         gear_type: Updated type (optional)
-        brand: Updated brand (optional)
-        model: Updated model (optional)
-        active: Updated active status (optional)
-        primary: Updated primary status (optional)
 
     Returns:
         Updated gear item details
@@ -215,15 +183,7 @@ async def update_gear(
             if name is not None:
                 gear_data["name"] = name
             if gear_type is not None:
-                gear_data["gear_type"] = gear_type
-            if brand is not None:
-                gear_data["brand"] = brand
-            if model is not None:
-                gear_data["model"] = model
-            if active is not None:
-                gear_data["active"] = active
-            if primary is not None:
-                gear_data["primary"] = primary
+                gear_data["type"] = gear_type
 
             if not gear_data:
                 return ResponseBuilder.build_error_response(
@@ -236,26 +196,20 @@ async def update_gear(
                 "id": gear.id,
                 "name": gear.name,
                 "type": gear.gear_type,
-                "active": gear.active,
-                "primary": gear.primary,
+                "active": gear.retired is None,
             }
 
-            if gear.brand:
-                result["brand"] = gear.brand
-            if gear.model:
-                result["model"] = gear.model
-
             # Usage statistics
-            if gear.distance is not None or gear.moving_time is not None:
+            if gear.distance is not None or gear.time is not None:
                 usage: dict[str, Any] = {}
                 if gear.distance is not None:
                     usage["total_distance_km"] = round(gear.distance / 1000, 2)
-                if gear.moving_time is not None:
-                    hours = gear.moving_time // 3600
-                    minutes = (gear.moving_time % 3600) // 60
+                if gear.time is not None:
+                    hours = int(gear.time) // 3600
+                    minutes = (int(gear.time) % 3600) // 60
                     usage["total_time"] = f"{hours}h {minutes}m"
-                if gear.activity_count is not None:
-                    usage["activity_count"] = gear.activity_count
+                if gear.activities is not None:
+                    usage["activity_count"] = gear.activities
                 result["usage"] = usage
 
             return ResponseBuilder.build_response(
@@ -336,34 +290,34 @@ async def create_gear_reminder(
 
     try:
         async with ICUClient(config) as client:
-            reminder_data: dict[str, Any] = {"text": text}
-
-            if distance_alert is not None:
-                # Convert km to meters
-                reminder_data["distance_alert"] = int(distance_alert * 1000)
-
-            if time_alert is not None:
-                # Convert hours to seconds
-                reminder_data["time_alert"] = time_alert * 3600
-
             if distance_alert is None and time_alert is None:
                 return ResponseBuilder.build_error_response(
                     "Must specify at least one alert threshold (distance_alert or time_alert)",
                     error_type="validation_error",
                 )
 
+            reminder_data: dict[str, Any] = {"name": text}
+
+            if distance_alert is not None:
+                # Convert km to meters
+                reminder_data["distance"] = int(distance_alert * 1000)
+
+            if time_alert is not None:
+                # Convert hours to seconds
+                reminder_data["time"] = time_alert * 3600
+
             reminder = await client.create_gear_reminder(gear_id, reminder_data)
 
             result: dict[str, Any] = {
                 "id": reminder.id,
                 "gear_id": gear_id,
-                "text": reminder.text,
+                "name": reminder.name,
             }
 
-            if reminder.distance_alert is not None:
-                result["alert_every_km"] = round(reminder.distance_alert / 1000, 2)
-            if reminder.time_alert is not None:
-                result["alert_every_hours"] = reminder.time_alert // 3600
+            if reminder.distance is not None:
+                result["alert_every_km"] = round(reminder.distance / 1000, 2)
+            if reminder.time is not None:
+                result["alert_every_hours"] = int(reminder.time) // 3600
 
             return ResponseBuilder.build_response(
                 result,
@@ -410,15 +364,15 @@ async def update_gear_reminder(
             reminder_data: dict[str, Any] = {}
 
             if text is not None:
-                reminder_data["text"] = text
+                reminder_data["name"] = text
 
             if distance_alert is not None:
                 # Convert km to meters
-                reminder_data["distance_alert"] = int(distance_alert * 1000)
+                reminder_data["distance"] = int(distance_alert * 1000)
 
             if time_alert is not None:
                 # Convert hours to seconds
-                reminder_data["time_alert"] = time_alert * 3600
+                reminder_data["time"] = time_alert * 3600
 
             if not reminder_data:
                 return ResponseBuilder.build_error_response(
@@ -430,21 +384,21 @@ async def update_gear_reminder(
             result: dict[str, Any] = {
                 "id": reminder.id,
                 "gear_id": gear_id,
-                "text": reminder.text,
+                "name": reminder.name,
             }
 
-            if reminder.distance_alert is not None:
-                result["alert_every_km"] = round(reminder.distance_alert / 1000, 2)
-            if reminder.time_alert is not None:
-                result["alert_every_hours"] = reminder.time_alert // 3600
+            if reminder.distance is not None:
+                result["alert_every_km"] = round(reminder.distance / 1000, 2)
+            if reminder.time is not None:
+                result["alert_every_hours"] = int(reminder.time) // 3600
 
-            if reminder.is_due is not None:
-                result["is_due"] = reminder.is_due
-
-            if reminder.due_distance is not None:
-                result["due_in_km"] = round(reminder.due_distance / 1000, 2)
-            if reminder.due_time is not None:
-                result["due_in_hours"] = reminder.due_time // 3600
+            if reminder.percent_used is not None:
+                result["percent_used"] = round(reminder.percent_used, 1)
+                result["is_due"] = reminder.percent_used >= 100
+            if reminder.distance_used is not None:
+                result["distance_used_km"] = round(reminder.distance_used / 1000, 2)
+            if reminder.time_used is not None:
+                result["time_used_hours"] = round(reminder.time_used / 3600, 1)
 
             return ResponseBuilder.build_response(
                 result,

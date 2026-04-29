@@ -255,39 +255,25 @@ async def get_best_efforts(
                     metadata={"message": "No best efforts found for this activity"},
                 )
 
+            # Map stream name to a human-readable average label
+            average_label = {
+                "watts": "average_watts",
+                "heartrate": "average_bpm",
+                "velocity_smooth": "average_speed_mps",
+            }.get(stream, "average")
+
             efforts_data: list[dict[str, Any]] = []
             for effort in best_efforts:
                 effort_item: dict[str, Any] = {
-                    "name": effort.name,
-                    "elapsed_time_seconds": effort.elapsed_time,
+                    "duration_seconds": effort.duration,
+                    "start_index": effort.start_index,
+                    "end_index": effort.end_index,
                 }
 
-                if effort.moving_time:
-                    effort_item["moving_time_seconds"] = effort.moving_time
+                if effort.average is not None:
+                    effort_item[average_label] = effort.average
                 if effort.distance:
                     effort_item["distance_meters"] = effort.distance
-
-                # Performance metrics
-                performance: dict[str, Any] = {}
-                if effort.average_watts:
-                    performance["average_watts"] = effort.average_watts
-                if effort.normalized_power:
-                    performance["normalized_power"] = effort.normalized_power
-                if effort.average_heartrate:
-                    performance["average_heartrate"] = effort.average_heartrate
-                if effort.average_cadence:
-                    performance["average_cadence"] = effort.average_cadence
-                if effort.average_speed:
-                    performance["average_speed_meters_per_sec"] = effort.average_speed
-
-                if performance:
-                    effort_item["performance"] = performance
-
-                # Location in activity
-                if effort.start_index is not None:
-                    effort_item["start_index"] = effort.start_index
-                if effort.end_index is not None:
-                    effort_item["end_index"] = effort.end_index
 
                 efforts_data.append(effort_item)
 

@@ -816,6 +816,7 @@ class ICUClient:
         activity_id: str,
         stream: str = "watts",
         duration: int | None = None,
+        count: int | None = None,
     ) -> list[BestEffort]:
         """Get best efforts for an activity.
 
@@ -823,6 +824,7 @@ class ICUClient:
             activity_id: Activity ID
             stream: Stream type to compute best efforts from ('watts', 'heartrate', 'velocity_smooth')
             duration: Optional duration in seconds (if not specified, returns standard best efforts)
+            count: Optional number of efforts to return (API defaults to 8 server-side if omitted)
 
         Returns:
             List of BestEffort objects
@@ -830,6 +832,8 @@ class ICUClient:
         params: dict[str, Any] = {"stream": stream}
         # API requires either duration or distance; default to 5 minutes (300 secs)
         params["duration"] = duration or 300
+        if count is not None:
+            params["count"] = count
 
         response = await self._request(
             "GET", f"/activity/{activity_id}/best-efforts", params=params

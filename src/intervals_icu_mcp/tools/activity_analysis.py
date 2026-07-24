@@ -1,5 +1,8 @@
 """Activity analysis tools for Intervals.icu MCP server."""
 
+import json
+import time
+from pathlib import Path
 from typing import Annotated, Any, cast
 
 from fastmcp import Context
@@ -8,6 +11,24 @@ from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
 from .types import IntParam, OptionalIntParam
+
+# Cap on how many cached stream files accumulate before the oldest are pruned.
+_STREAM_CACHE_MAX_FILES = 100
+
+
+def _stream_cache_dir(config: ICUConfig) -> Path:
+    """Resolve the directory streamed activity data is written to."""
+    if config.intervals_icu_stream_cache_dir:
+        return Path(config.intervals_icu_stream_cache_dir)
+    return Path.home() / ".intervals-icu-mcp" / "stream_cache"
+
+
+def _prune_stream_cache(cache_dir: Path) -> None:
+    """Delete the oldest cached stream files once the cache exceeds its cap."""
+    files = sorted(cache_dir.glob("*_streams_*.json"), key=lambda p: p.stat().st_mtime)
+    excess = len(files) - _STREAM_CACHE_MAX_FILES
+    for stale_file in files[:excess]:
+        stale_file.unlink(missing_ok=True)
 
 
 async def get_activity_streams(
@@ -20,9 +41,14 @@ async def get_activity_streams(
 ) -> str:
     """Get time-series data streams for an activity.
 
-    Returns second-by-second data for various metrics like power, heart rate,
-    cadence, speed, altitude, etc. This data is essential for detailed workout
-    analysis and visualization.
+    Writes second-by-second data for various metrics like power, heart rate,
+    cadence, speed, altitude, etc. to a local JSON file and returns its path,
+    rather than inlining the raw arrays. This data is essential for detailed
+    workout analysis, and inlining it is unreliable: small streams (e.g. a run
+    logged at ~4s sample intervals) don't always trigger the calling host's
+    disk-backed handling the way large streams do, so they'd otherwise get
+    dumped as raw text that isn't usable for real analysis. Writing to disk
+    ourselves makes the behavior consistent regardless of payload size.
 
     Available stream types:
     - watts: Power data
@@ -80,18 +106,29 @@ async def get_activity_streams(
                     metadata={"message": "No stream data available for this activity"},
                 )
 
-            # Build response
+            # Build the raw payload and write it to disk instead of inlining it.
             streams_dict: dict[str, Any] = {}
             for stream_name in available_streams:
                 stream_value = getattr(streams_data, stream_name)
                 if stream_value is not None:
                     streams_dict[stream_name] = stream_value
 
+            cache_dir = _stream_cache_dir(config)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+            out_path = cache_dir / f"{activity_id}_streams_{int(time.time())}.json"
+            out_path.write_text(json.dumps(streams_dict))
+
+            _prune_stream_cache(cache_dir)
+
             result_data = {
                 "activity_id": activity_id,
-                "streams": streams_dict,
+                "file_path": str(out_path),
                 "available_streams": available_streams,
                 "stream_lengths": stream_lengths,
+                "note": "Stream arrays were written to file_path as JSON (one key per stream "
+                "name) rather than inlined. Load it directly, e.g. json.load() or "
+                "pandas.read_json(file_path), for analysis.",
             }
 
             return ResponseBuilder.build_response(
@@ -224,6 +261,10 @@ async def get_best_efforts(
         int | None,
         "Duration in seconds to compute best efforts for (optional, default 300 seconds)",
     ] = None,
+    count: Annotated[
+        OptionalIntParam,
+        "Number of efforts to return (optional; API defaults to 8 server-side if omitted)",
+    ] = None,
     ctx: Context | None = None,
 ) -> str:
     """Get best efforts/peak performances from an activity.
@@ -236,6 +277,7 @@ async def get_best_efforts(
         activity_id: The unique ID of the activity
         stream: Stream type to analyze ('watts', 'heartrate', or 'velocity_smooth')
         duration: Duration in seconds to compute best efforts for (optional, defaults to 300)
+        count: Number of efforts to return (optional; API defaults to 8 if omitted)
 
     Returns:
         JSON string with best efforts data
@@ -245,12 +287,27 @@ async def get_best_efforts(
 
     try:
         async with ICUClient(config) as client:
-            best_efforts = await client.get_best_efforts(activity_id, stream=stream, duration=duration)
+            best_efforts = await client.get_best_efforts(
+                activity_id, stream=stream, duration=duration, count=count
+            )
 
             if not best_efforts:
                 return ResponseBuilder.build_response(
                     data={"best_efforts": [], "count": 0, "activity_id": activity_id},
                     metadata={"message": "No best efforts found for this activity"},
+                )
+
+            # The API has previously returned efforts with start/end indices but a null
+            # `average` for every entry when the response shape didn't match what we expected
+            # (see BUGFIX_BRIEF.md #2). That's silent data corruption for training analysis,
+            # so fail loudly instead of quietly handing back all-null efforts.
+            if all(effort.average is None for effort in best_efforts):
+                return ResponseBuilder.build_error_response(
+                    f"Best-efforts response for activity {activity_id} (stream={stream}) had "
+                    f"{len(best_efforts)} effort(s) but none had an 'average' value. This looks "
+                    "like an API response shape mismatch rather than genuinely empty data - "
+                    "do not treat this as a valid zero/empty result.",
+                    error_type="data_integrity_error",
                 )
 
             # Map stream name to a human-readable average label

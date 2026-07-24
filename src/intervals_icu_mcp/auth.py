@@ -18,6 +18,9 @@ class ICUConfig(BaseSettings):
 
     intervals_icu_api_key: str = ""
     intervals_icu_athlete_id: str = ""
+    # Directory where large tool payloads (e.g. activity streams) are written instead of
+    # being returned inline. Empty string means "use the default" (~/.intervals-icu-mcp/stream_cache).
+    intervals_icu_stream_cache_dir: str = ""
 
 
 def load_config() -> ICUConfig:

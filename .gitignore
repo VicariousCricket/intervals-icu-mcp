@@ -57,5 +57,10 @@ exports/
 *.tcx
 *.fit
 
+# Activity stream cache (get-activity-streams writes here if INTERVALS_ICU_STREAM_CACHE_DIR
+# points inside the repo; the default location is outside the repo under ~/.intervals-icu-mcp/)
+.stream_cache/
+stream_cache/
+
 # Logs
 *.log

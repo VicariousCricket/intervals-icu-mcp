@@ -74,6 +74,8 @@ Create a `.env` file manually:
 ```bash
 INTERVALS_ICU_API_KEY=your_api_key_here
 INTERVALS_ICU_ATHLETE_ID=i123456
+# Optional: where get-activity-streams writes stream data (defaults to ~/.intervals-icu-mcp/stream_cache)
+INTERVALS_ICU_STREAM_CACHE_DIR=
 ```
 
 ### Option 2: Using Docker
@@ -269,7 +271,7 @@ _Note: The athlete profile resource (`intervals-icu://athlete/profile`) automati
 
 | Tool                     | Description                                                   |
 | ------------------------ | ------------------------------------------------------------- |
-| `get-activity-streams`   | Get time-series data (power, HR, cadence, altitude, GPS)      |
+| `get-activity-streams`   | Write time-series data (power, HR, cadence, altitude, GPS) to a local JSON file and return its path |
 | `get-activity-intervals` | Get structured workout intervals with targets and performance |
 | `get-best-efforts`       | Find peak performances across all durations in an activity    |
 | `search-intervals`       | Find similar intervals across activity history                |

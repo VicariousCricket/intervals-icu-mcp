@@ -44,8 +44,13 @@ async def get_power_curves(
     config: ICUConfig = ctx.get_state("config")
 
     try:
-        # Determine date range
+        # Determine date range. `newest` is resolved once here (rather than left for the
+        # client to default separately) so the exact range we searched can be echoed back
+        # verbatim in the "no data" message below - an empty result for a real range is a
+        # valid outcome, not a bug, and should be reported as such rather than looking like
+        # unexplained flakiness.
         oldest = None
+        newest = datetime.now().strftime("%Y-%m-%d")
 
         if days_back is not None:
             oldest_date = datetime.now() - timedelta(days=days_back)
@@ -77,14 +82,24 @@ async def get_power_curves(
             period_label = "90_days"
 
         async with ICUClient(config) as client:
-            power_curve = await client.get_power_curves(oldest=oldest, activity_type=activity_type)
+            power_curve = await client.get_power_curves(
+                oldest=oldest, newest=newest, activity_type=activity_type
+            )
 
             if not power_curve.data or len(power_curve.data) == 0:
+                date_range = f"{oldest or 'the beginning of your history'} to {newest}"
                 return ResponseBuilder.build_response(
                     data={"power_curve": [], "period": period_label},
                     metadata={
-                        "message": f"No power curve data available for {period_label}. "
-                        "Complete some rides with power to build your power curve."
+                        "message": f"No power curve data available for activity_type="
+                        f"'{activity_type}' between {date_range}. This is a valid result if "
+                        f"you have no '{activity_type}' activities with power data in that "
+                        "window (e.g. taper weeks, or querying a non-power sport) - it is not "
+                        "necessarily a bug. Widen the range (days_back/time_period) or change "
+                        "activity_type if this is unexpected.",
+                        "queried_activity_type": activity_type,
+                        "queried_oldest": oldest,
+                        "queried_newest": newest,
                     },
                 )
 

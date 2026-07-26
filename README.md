@@ -233,6 +233,10 @@ For the full catalogue of example prompts by category, see [docs/examples.md](ht
 
 Destructive tools are gated by the optional `INTERVALS_ICU_DELETE_MODE` env var (`safe` / `full` / `none`, default `safe`) — a server-side gate outside the model's reach, so unregistered tools can't be invoked. See [docs/tools.md](https://github.com/hhopke/intervals-icu-mcp/blob/main/docs/tools.md#delete-safety-mode) for the full mode table, response envelope, and TZ-buffer rationale.
 
+## Activity Stream Cache
+
+`icu_get_activity_streams` writes its per-sample arrays to a local JSON file and returns `file_path` instead of inlining them — small streams (a run sampled every ~4s) otherwise get dumped as raw text the client can't use for analysis, while large ones are routed to disk, making behaviour inconsistent. `available_streams` and `stream_lengths` still come back inline. The cache defaults to `~/.intervals-icu-mcp/stream_cache`, is configurable via the optional `INTERVALS_ICU_STREAM_CACHE_DIR` env var, and keeps the 100 most recent files.
+
 ## Remote Deployment (HTTP / SSE)
 
 The server runs over **stdio** by default — the right transport for local clients like Claude Desktop, Claude Code, and Cursor. HTTP and SSE transports are available for remote or hosted use.

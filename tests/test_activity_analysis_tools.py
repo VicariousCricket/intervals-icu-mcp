@@ -1,10 +1,13 @@
 """Tests for activity analysis tools — streams, intervals, best efforts, search_intervals."""
 
 import json
+import os
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from httpx import Response
 
+from intervals_icu_mcp.tools import activity_analysis
 from intervals_icu_mcp.tools.activity_analysis import (
     get_activity_intervals,
     get_activity_streams,
@@ -40,7 +43,62 @@ class TestGetActivityStreams:
         assert "heartrate" in data["available_streams"]
         assert "no_type_stream" in data["available_streams"]
         assert data["stream_lengths"]["watts"] == 3
-        assert data["streams"]["heartrate"] == [120, 140, 160]
+
+        # Raw arrays go to disk, not into the response.
+        assert "streams" not in data
+        cached = json.loads(Path(data["file_path"]).read_text())
+        assert cached["heartrate"] == [120, 140, 160]
+        assert cached["watts"] == [100, 200, 250]
+
+    async def test_writes_small_streams_to_disk(self, mock_config, respx_mock):
+        """Even a tiny stream is written to disk — the original bug was small
+        payloads getting inlined as unusable raw text by the calling host."""
+        respx_mock.get("/activity/a1/streams.json").mock(
+            return_value=Response(200, json=[{"type": "watts", "data": [1, 2]}])
+        )
+
+        result = await get_activity_streams(activity_id="a1", ctx=_make_ctx(mock_config))
+        data = json.loads(result)["data"]
+
+        assert "streams" not in data
+        assert Path(data["file_path"]).is_file()
+        assert json.loads(Path(data["file_path"]).read_text()) == {"watts": [1, 2]}
+
+    async def test_honours_configured_cache_dir(self, mock_config, respx_mock):
+        """file_path lands inside INTERVALS_ICU_STREAM_CACHE_DIR."""
+        respx_mock.get("/activity/a1/streams.json").mock(
+            return_value=Response(200, json=[{"type": "watts", "data": [1]}])
+        )
+
+        result = await get_activity_streams(activity_id="a1", ctx=_make_ctx(mock_config))
+        file_path = Path(json.loads(result)["data"]["file_path"])
+
+        assert file_path.parent == Path(mock_config.intervals_icu_stream_cache_dir)
+
+    async def test_prunes_cache_beyond_cap(self, mock_config, respx_mock, monkeypatch):
+        """Oldest cached files are removed once the cap is exceeded."""
+        monkeypatch.setattr(activity_analysis, "_STREAM_CACHE_MAX_FILES", 2)
+        cache_dir = Path(mock_config.intervals_icu_stream_cache_dir)
+        cache_dir.mkdir(parents=True)
+
+        # Three pre-existing cache files, oldest first.
+        for i in range(3):
+            stale = cache_dir / f"old{i}_streams_{i}.json"
+            stale.write_text("{}")
+            os.utime(stale, (i, i))
+
+        respx_mock.get("/activity/a1/streams.json").mock(
+            return_value=Response(200, json=[{"type": "watts", "data": [1]}])
+        )
+        result = await get_activity_streams(activity_id="a1", ctx=_make_ctx(mock_config))
+        new_file = Path(json.loads(result)["data"]["file_path"])
+
+        remaining = sorted(p.name for p in cache_dir.glob("*_streams_*.json"))
+        assert len(remaining) == 2
+        assert new_file.name in remaining
+        # The two oldest were pruned; the newest pre-existing one survived.
+        assert "old0_streams_0.json" not in remaining
+        assert "old1_streams_1.json" not in remaining
 
     async def test_with_stream_filter(self, mock_config, respx_mock):
         """Stream filter is forwarded as comma-separated `types` query param."""
@@ -243,18 +301,14 @@ class TestGetBestEfforts:
             )
         )
 
-        result = await get_best_efforts(
-            activity_id="a1", duration=1200, ctx=_make_ctx(mock_config)
-        )
+        result = await get_best_efforts(activity_id="a1", duration=1200, ctx=_make_ctx(mock_config))
         response = json.loads(result)
         assert response["data"]["count"] == 0
 
     async def test_api_error(self, mock_config, respx_mock):
         respx_mock.get("/activity/a1/best-efforts").mock(return_value=Response(401, json={}))
 
-        result = await get_best_efforts(
-            activity_id="a1", duration=1200, ctx=_make_ctx(mock_config)
-        )
+        result = await get_best_efforts(activity_id="a1", duration=1200, ctx=_make_ctx(mock_config))
         response = json.loads(result)
         assert response["error"]["type"] == "api_error"
 

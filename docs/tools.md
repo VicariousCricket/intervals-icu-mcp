@@ -70,7 +70,7 @@ Set the mode in your client config alongside the credentials:
 
 | Tool                     | Description                                                   |
 | ------------------------ | ------------------------------------------------------------- |
-| `icu_get_activity_streams`   | Get time-series data (power, HR, cadence, altitude, GPS)      |
+| `icu_get_activity_streams`   | Get time-series data (power, HR, cadence, altitude, GPS) — written to a local JSON file, returns `file_path` (see [Activity Stream Cache](../README.md#activity-stream-cache)) |
 | `icu_get_activity_intervals` | Get structured workout intervals with targets and performance |
 | `icu_get_best_efforts`       | Find peak performances across all durations in an activity    |
 | `icu_search_intervals`       | Find similar intervals across activity history                |

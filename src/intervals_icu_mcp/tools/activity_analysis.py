@@ -1,5 +1,8 @@
 """Activity analysis tools for Intervals.icu MCP server."""
 
+import json
+import time
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastmcp import Context
@@ -8,6 +11,24 @@ from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..response_builder import ResponseBuilder
 from ._strava import fetch_strava_limitation_note
+
+# Cap on how many cached stream files accumulate before the oldest are pruned.
+_STREAM_CACHE_MAX_FILES = 100
+
+
+def _stream_cache_dir(config: ICUConfig) -> Path:
+    """Resolve the directory streamed activity data is written to."""
+    if config.intervals_icu_stream_cache_dir:
+        return Path(config.intervals_icu_stream_cache_dir)
+    return Path.home() / ".intervals-icu-mcp" / "stream_cache"
+
+
+def _prune_stream_cache(cache_dir: Path) -> None:
+    """Delete the oldest cached stream files once the cache exceeds its cap."""
+    files = sorted(cache_dir.glob("*_streams_*.json"), key=lambda p: p.stat().st_mtime)
+    excess = len(files) - _STREAM_CACHE_MAX_FILES
+    for stale_file in files[:excess]:
+        stale_file.unlink(missing_ok=True)
 
 
 async def get_activity_streams(
@@ -24,6 +45,13 @@ async def get_activity_streams(
     visualization or custom analysis. Most "how was my ride?" questions
     are better answered by get_activity_details (summary metrics) or
     get_activity_intervals (per-lap breakdown).
+
+    The arrays are written to a local JSON file and `file_path` is returned
+    instead of the data itself — read that file to analyse the streams. The
+    response still carries `available_streams` and `stream_lengths` inline.
+    Cache location defaults to ~/.intervals-icu-mcp/stream_cache and is
+    configurable via INTERVALS_ICU_STREAM_CACHE_DIR; it keeps the 100 most
+    recent files.
 
     Stream-type filter accepts any of: watts, heartrate, cadence,
     velocity_smooth, altitude, distance, time, latlng, temp, moving,
@@ -61,11 +89,28 @@ async def get_activity_streams(
                     if isinstance(data, list):
                         stream_lengths[name] = len(data)  # type: ignore[arg-type]
 
+            # Write the raw arrays to disk instead of inlining them. Inlining is
+            # unreliable: small streams (e.g. a run logged at ~4s sample intervals)
+            # don't always trigger the calling host's disk-backed handling the way
+            # large streams do, so they'd otherwise get dumped as raw text that
+            # isn't usable for real analysis. Writing the file ourselves makes the
+            # behavior consistent regardless of payload size.
+            cache_dir = _stream_cache_dir(config)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+            out_path = cache_dir / f"{activity_id}_streams_{int(time.time())}.json"
+            out_path.write_text(json.dumps(streams_dict))
+
+            _prune_stream_cache(cache_dir)
+
             result_data = {
                 "activity_id": activity_id,
-                "streams": streams_dict,
+                "file_path": str(out_path),
                 "available_streams": available_streams,
                 "stream_lengths": stream_lengths,
+                "note": "Stream arrays were written to file_path as JSON (one key per stream "
+                "name) rather than inlined. Load it directly, e.g. json.load() or "
+                "pandas.read_json(file_path), for analysis.",
             }
 
             return ResponseBuilder.build_response(

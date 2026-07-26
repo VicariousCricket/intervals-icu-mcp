@@ -31,11 +31,16 @@ ICUConfig.model_config["env_file"] = None
 
 
 @pytest.fixture
-def mock_config():
-    """Provide a mock ICU configuration for testing."""
+def mock_config(tmp_path):
+    """Provide a mock ICU configuration for testing.
+
+    The stream cache is pinned to a tmp_path so tests never write to (or prune)
+    the real ~/.intervals-icu-mcp/stream_cache on the developer's machine.
+    """
     return ICUConfig(
         intervals_icu_api_key="test_api_key_12345",
         intervals_icu_athlete_id="i123456",
+        intervals_icu_stream_cache_dir=str(tmp_path / "stream_cache"),
     )
 
 

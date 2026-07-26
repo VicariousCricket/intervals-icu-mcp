@@ -25,6 +25,7 @@ class ICUConfig(BaseSettings):
     intervals_icu_api_key: str = ""
     intervals_icu_athlete_id: str = ""
     intervals_icu_delete_mode: DeleteMode = "safe"
+    intervals_icu_stream_cache_dir: str = ""
 
     @field_validator("intervals_icu_delete_mode", mode="before")
     @classmethod

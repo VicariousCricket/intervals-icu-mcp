@@ -65,3 +65,7 @@ exports/
 
 # Smoke eval results
 .smoke-eval/
+
+# Activity stream cache (default lives in ~/.intervals-icu-mcp, but
+# INTERVALS_ICU_STREAM_CACHE_DIR may point somewhere inside the repo)
+stream_cache/
